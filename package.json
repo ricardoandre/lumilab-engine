@@ -1,0 +1,39 @@
+{
+  "name": "@lumilab/engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared application engine: list/detail/form UI, ACL, CRUD API, and release tooling. Consumed as TypeScript source via Next's transpilePackages — no build step, so types stay exact and 'always latest' is genuinely instant.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ui": "./src/ui/index.ts",
+    "./server": "./src/server/index.ts",
+    "./runtime": "./src/runtime.ts",
+    "./nav-types": "./src/nav-types.ts",
+    "./lib/*": "./src/lib/*.ts",
+    "./ui/*": "./src/ui/*.tsx",
+    "./server/*": "./src/server/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "@prisma/client": "^7.9.1",
+    "@refinedev/antd": "^6.0.3",
+    "@refinedev/core": "^5.0.12",
+    "antd": "^5.22.0",
+    "dayjs": "^1.11.13",
+    "next": "^16.3.0",
+    "next-auth": "5.0.0-beta.32",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@tiptap/react": { "optional": true },
+    "isomorphic-dompurify": { "optional": true }
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
