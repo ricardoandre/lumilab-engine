@@ -12,7 +12,8 @@
     "./nav-types": "./src/nav-types.ts",
     "./lib/*": "./src/lib/*.ts",
     "./ui/*": "./src/ui/*.tsx",
-    "./server/*": "./src/server/*.ts"
+    "./server/*": "./src/server/*.ts",
+    "./server/routes/*": "./src/server/routes/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

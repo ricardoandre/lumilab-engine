@@ -35,11 +35,11 @@ export type EngineDb = Record<string, any>;
 export type EngineSession = Session;
 
 export interface EngineConfig {
-  /** The app's own generated Prisma client. */
+  /** The app's own generated Prisma client. SERVER ONLY. */
   db: EngineDb;
-  /** The app's Auth.js `auth()` — returns the current session, or null. */
+  /** The app's Auth.js `auth()` — returns the current session, or null. SERVER ONLY. */
   auth: () => Promise<EngineSession | null>;
-  /** The app's sidebar definition. */
+  /** The app's sidebar definition. Needed on the client too — AppSider renders it. */
   navGroups: NavGroup[];
   /**
    * Optional per-app capability hooks. kanoapp uses these for its product-naming
@@ -52,20 +52,33 @@ export interface EngineConfig {
   };
 }
 
-let config: EngineConfig | null = null;
+let config: Partial<EngineConfig> = {};
 
-export function configureEngine(next: EngineConfig): void {
-  config = next;
+/**
+ * MERGES rather than replaces, and every field is optional, because the config
+ * necessarily arrives in two halves. `db` and `auth` are server-only — bundling
+ * a Prisma client into the browser is both broken and a data leak — while
+ * `navGroups` is needed on the CLIENT, since AppSider renders the sidebar. So an
+ * app calls this twice: once from a server entry with db + auth, once from a
+ * client entry with navGroups. Requiring all three at once would force one of
+ * those two calls to lie.
+ *
+ * Each accessor below fails on its own if its piece is missing, so a client
+ * component reading NAV_GROUPS never trips over an absent database.
+ */
+export function configureEngine(next: Partial<EngineConfig>): void {
+  config = { ...config, ...next };
 }
 
-function required(): EngineConfig {
-  if (!config) {
+function need<K extends keyof EngineConfig>(key: K): NonNullable<EngineConfig[K]> {
+  const v = config[key];
+  if (v === undefined) {
     throw new Error(
-      'lumilab-engine: configureEngine() was never called. ' +
-        'Import the app’s engine setup module (usually src/engine.ts) before any engine code runs.',
+      `lumilab-engine: configureEngine({ ${key} }) was never called on this side of the ` +
+        `server/client boundary. Server code needs db + auth; client code needs navGroups.`,
     );
   }
-  return config;
+  return v as NonNullable<EngineConfig[K]>;
 }
 
 /**
@@ -74,7 +87,7 @@ function required(): EngineConfig {
  * "cannot read property findMany of undefined" somewhere unrelated.
  */
 export function db(): EngineDb {
-  return required().db;
+  return need('db');
 }
 
 /** Proxy so extracted code can keep saying `prisma.user.findMany(...)` unchanged. */
@@ -85,12 +98,12 @@ export const prisma: EngineDb = new Proxy({} as EngineDb, {
 });
 
 export function auth(): Promise<EngineSession | null> {
-  return required().auth();
+  return need('auth')();
 }
 
 export const NAV_GROUPS: NavGroup[] = new Proxy([] as NavGroup[], {
   get(_t, prop) {
-    const groups = required().navGroups;
+    const groups = need('navGroups');
     const value = (groups as any)[prop];
     return typeof value === 'function' ? value.bind(groups) : value;
   },
