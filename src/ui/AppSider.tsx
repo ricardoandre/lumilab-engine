@@ -33,6 +33,32 @@ function isActiveNavItem(pathname: string | null | undefined, item: NavItem): bo
   return isActiveHref(pathname, item.href) || (item.matchHrefs ?? []).some((h) => isActiveHref(pathname, h));
 }
 
+/**
+ * How long an item's matching href is — the basis for "most specific wins".
+ *
+ * Nested nav entries broke plain matching: on /accounts/1 BOTH "All Accounts"
+ * (/accounts) and the account's own entry (/accounts/1) matched, so one click
+ * lit up two rows. Length alone decides it, and it needs no extra config.
+ */
+function activeSpecificity(pathname: string | null | undefined, item: NavItem): number {
+  const candidates = [item.href, ...(item.matchHrefs ?? [])].filter(Boolean) as string[];
+  let best = 0;
+  for (const h of candidates) if (isActiveHref(pathname, h)) best = Math.max(best, h.length);
+  return best;
+}
+
+/** The longest href in the whole nav that matches — only that item highlights. */
+function bestSpecificity(pathname: string | null | undefined, groups: NavGroup[]): number {
+  let best = 0;
+  for (const g of groups) {
+    for (const entry of g.entries) {
+      const items = isNavSubGroup(entry) ? (entry.items ?? []) : [entry as NavItem];
+      for (const it of items) best = Math.max(best, activeSpecificity(pathname, it));
+    }
+  }
+  return best;
+}
+
 // Fully custom Sider (passed to <ThemedLayout Sider={AppSider}>) — replaces
 // Refine's auto-generated resource-tree menu, which can only show routes
 // that actually exist. This one is a static roadmap: groups (and, for Ads,
@@ -93,6 +119,7 @@ export function AppSider() {
   // are dropped. Until permissions load (`ready`), render nothing rather than
   // flashing the full menu.
   const visibleGroups = useMemo(() => {
+    // Until permissions load, render NOTHING rather than flashing the full menu.
     if (!ready) return [] as NavGroup[];
     const hrefKey = (href: string) => href.replace(/^\//, '');
     // An item is visible if the user can view its own route OR any sibling tab
@@ -130,6 +157,9 @@ export function AppSider() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups, ready, isAdmin, perm]);
 
+  // Only the most specific matching entry highlights — see bestSpecificity.
+  const best = bestSpecificity(pathname, visibleGroups);
+
   // Keys of every open group ("Group") and subgroup ("Group>Subgroup").
   // Recomputed from scratch (not accumulated) whenever the route changes —
   // navigating into a different section expands it AND collapses whatever
@@ -155,8 +185,13 @@ export function AppSider() {
       }
       return next;
     });
+    // configVersion matters as much as pathname: an app whose nav lists database
+    // rows configures those entries AFTER mount, so on first render the subgroup
+    // holding the active route does not exist yet. Without this the group stays
+    // shut and its active child — correctly marked active — is simply not rendered,
+    // which looks exactly like "nothing is highlighted".
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+  }, [pathname, configVersion]);
 
   function toggle(key: string) {
     setOpenKeys((prev) => {
@@ -184,7 +219,7 @@ export function AppSider() {
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
         {visibleGroups.map((group) => (
-          <GroupSection key={group.label} group={group} pathname={pathname} openKeys={openKeys} onToggle={toggle} />
+          <GroupSection key={group.label} group={group} pathname={pathname} best={best} openKeys={openKeys} onToggle={toggle} />
         ))}
       </div>
     </div>
@@ -221,11 +256,13 @@ export function AppSider() {
 function GroupSection({
   group,
   pathname,
+  best,
   openKeys,
   onToggle,
 }: {
   group: NavGroup;
   pathname: string | null;
+  best: number;
   openKeys: Set<string>;
   onToggle: (key: string) => void;
 }) {
@@ -252,7 +289,7 @@ function GroupSection({
       {open && (
         <div style={{ paddingLeft: 4 }}>
           {group.entries.map((entry) => (
-            <EntryRow key={entry.label} entry={entry} groupLabel={group.label} pathname={pathname} openKeys={openKeys} onToggle={onToggle} />
+            <EntryRow key={entry.label} entry={entry} groupLabel={group.label} pathname={pathname} best={best} openKeys={openKeys} onToggle={onToggle} />
           ))}
         </div>
       )}
@@ -264,12 +301,14 @@ function EntryRow({
   entry,
   groupLabel,
   pathname,
+  best,
   openKeys,
   onToggle,
 }: {
   entry: NavEntry;
   groupLabel: string;
   pathname: string | null;
+  best: number;
   openKeys: Set<string>;
   onToggle: (key: string) => void;
 }) {
@@ -303,14 +342,14 @@ function EntryRow({
         {open && (
           <div>
             {entry.items.map((item) => (
-              <NavRow key={item.label} item={item} active={isActiveNavItem(pathname, item)} indent={2} />
+              <NavRow key={item.label} item={item} active={activeSpecificity(pathname, item) === best && best > 0} indent={2} />
             ))}
           </div>
         )}
       </div>
     );
   }
-  return <NavRow item={entry} active={isActiveNavItem(pathname, entry)} indent={1} />;
+  return <NavRow item={entry} active={activeSpecificity(pathname, entry) === best && best > 0} indent={1} />;
 }
 
 function NavRow({ item, active, indent }: { item: NavItem; active: boolean; indent: number }) {
