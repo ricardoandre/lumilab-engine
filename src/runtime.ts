@@ -42,6 +42,19 @@ export interface EngineConfig {
   /** The app's sidebar definition. Needed on the client too — AppSider renders it. */
   navGroups: NavGroup[];
   /**
+   * Product name and home link for the sidebar title. The engine used to render
+   * the literal string "kanoapp" and route home to /dashboard, which is how a
+   * second app ended up branded as the first one.
+   */
+  brand: { name: string; homeHref?: string };
+  /**
+   * Extra nav group shown only to admins. Optional, and app-supplied: the engine
+   * previously hardcoded kanoapp's admin menu (Smart Search, System Health,
+   * Integrations, Database...), so every app inherited routes it does not have
+   * AND a second group labelled ADMIN next to its own.
+   */
+  adminNav?: NavGroup | null;
+  /**
    * Optional per-app capability hooks. kanoapp uses these for its product-naming
    * permission; a new app that has no such concept simply omits them and the
    * defaults below deny cleanly rather than throwing.
@@ -66,8 +79,29 @@ let config: Partial<EngineConfig> = {};
  * Each accessor below fails on its own if its piece is missing, so a client
  * component reading NAV_GROUPS never trips over an absent database.
  */
+const listeners = new Set<() => void>();
+let version = 0;
+
 export function configureEngine(next: Partial<EngineConfig>): void {
   config = { ...config, ...next };
+  version += 1;
+  listeners.forEach((l) => l());
+}
+
+/**
+ * Config can change AFTER first render — an app whose sidebar lists database
+ * rows (one entry per account) can only fetch them once mounted. Without a
+ * subscription the new nav sits in the module variable and AppSider never
+ * re-renders, because reading a plain object during render tells React nothing.
+ */
+export function subscribeEngine(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+/** Snapshot for useSyncExternalStore — a number, so identity is stable. */
+export function engineVersion(): number {
+  return version;
 }
 
 function need<K extends keyof EngineConfig>(key: K): NonNullable<EngineConfig[K]> {
@@ -108,6 +142,15 @@ export const NAV_GROUPS: NavGroup[] = new Proxy([] as NavGroup[], {
     return typeof value === 'function' ? value.bind(groups) : value;
   },
 });
+
+export function brand(): { name: string; homeHref?: string } {
+  return need('brand');
+}
+
+/** Null when the app supplies no admin group — the engine adds none of its own. */
+export function adminNavGroup(): NavGroup | null {
+  return config.adminNav ?? null;
+}
 
 /** Defaults deny: an app without a naming concept grants the capability to nobody. */
 export async function namesAnyBrand(userId: bigint | string | null): Promise<boolean> {

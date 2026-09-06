@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { usePermissions } from '../lib/use-permissions';
@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { Layout, Grid, Drawer } from 'antd';
 import { useThemedLayoutContext } from '@refinedev/antd';
 import { RightOutlined } from '@ant-design/icons';
-import { NAV_GROUPS, isNavSubGroup, type NavItem, type NavGroup, type NavEntry } from '../runtime';
+import { NAV_GROUPS, adminNavGroup, subscribeEngine, engineVersion, isNavSubGroup, type NavItem, type NavGroup, type NavEntry } from '../runtime';
 import { AppTitle } from './AppTitle';
 import { useIsSandbox, SANDBOX_SIDER_BG } from '../lib/sandbox-env';
 import { RESOURCE_COUNT_CHANGED } from '../lib/resource-count-bus';
@@ -72,36 +72,20 @@ export function AppSider() {
   const ready = perm !== null;
   const canViewKey = (key: string) => isAdmin || (perm?.view.has(key) ?? false);
 
+  // Re-read the nav when configureEngine() runs again — see subscribeEngine.
+  const configVersion = useSyncExternalStore(subscribeEngine, engineVersion, engineVersion);
+
   const groups = useMemo(() => {
     const g = [...NAV_GROUPS];
-    if (isAdmin) {
-      g.push({
-        label: 'ADMIN',
-        entries: [
-          // Cross-object search (Andre, 2026-08-17). Admin-only for now, same
-          // as the rest of this group; the page itself only ever shows what the
-          // signed-in user's own resource permissions allow.
-          { label: 'Smart Search', href: '/smart-search' },
-          // Is every automatic feed still arriving? Admin-only: it reports the
-          // crontab, the disk and every platform token's expiry.
-          { label: 'System Health', href: '/system-health' },
-          { label: 'Roles', href: '/roles' },
-          { label: 'Users', href: '/users' },
-          { label: 'Field Options', href: '/field-options' },
-          // Which of our shops/accounts a KOL product request can be sent for
-          // (Andre, 2026-09-04). Reference data like Field Options, not work:
-          // filled once, touched again only when a new shop opens.
-          { label: 'Shop / Account', href: '/affiliate-accounts' },
-          // Account-wide policy numbers (Shopee blend target, pricing defaults).
-          // Registry-driven — see lib/app-settings-registry.ts.
-          { label: 'Settings', href: '/settings' },
-          { label: 'Integrations', href: '/integrations' },
-          { label: 'Database', href: '/dev' },
-        ],
-      });
-    }
+    // App-supplied, never hardcoded here. The engine used to append kanoapp's
+    // own ADMIN group (Smart Search, System Health, Integrations, Database...),
+    // so a second app got a menu of routes it does not have, sitting next to its
+    // own admin group — two entries both reading "Admin".
+    const extra = isAdmin ? adminNavGroup() : null;
+    if (extra) g.push(extra);
     return g;
-  }, [isAdmin]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, configVersion]);
 
   // Deny-by-default filter: an item shows only if the user can view its key
   // (href without the leading slash). Roadmap placeholders (no href) and

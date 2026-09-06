@@ -12,4 +12,7 @@ export { RichTextValue } from './RichTextValue';
 export { QuickStatusCell } from './QuickStatusCell';
 export { BulkStatusBar } from './BulkStatusBar';
 export { createResourceListView } from './resourceConfigToListView';
-export { PendingNamingBanner, usePendingNamingCount } from './PendingNamingBanner';
+
+// PendingNamingBanner was removed from the engine on 2026-09-06: it is about
+// kanoapp's product naming and fetched /api/products, an endpoint no other app
+// has. It stays in kanoapp as an app component.

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useThemedLayoutContext } from '@refinedev/antd';
+import { brand } from '../runtime';
 
 // Replaces Refine's default "Refine Project" placeholder branding. Clicking
 // it collapses the sidebar (desktop) / closes it (mobile) and goes to My
@@ -41,7 +42,7 @@ export function AppTitle({ collapsed }: { collapsed?: boolean }) {
       />
       {!collapsed && (
         <span style={{ fontSize: 14, fontWeight: 700, color: '#211f1c', letterSpacing: '-0.01em' }}>
-          kanoapp
+          {brand().name}
         </span>
       )}
     </div>
