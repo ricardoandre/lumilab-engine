@@ -60,6 +60,19 @@ export interface CrudSpec {
   // (e.g. Color Mapping showing the products that use each mapped colour).
   // Runs on the page only, never the whole table.
   decorate?: (rows: any[]) => Promise<any[]>;
+  /**
+   * Rows this resource is allowed to see AT ALL, ANDed into every list, read and
+   * write. For a resource that is a SLICE of a shared table rather than a table
+   * of its own — gold purchases are Transactions of one account with type BUY,
+   * and without this the list would show every trade in the app.
+   */
+  baseWhere?: Record<string, unknown>;
+  /**
+   * Last chance to shape the row before it is written. For columns the form
+   * cannot sensibly supply: a required dedupe key, a sign convention, a fixed
+   * account id. Receives the validated body and returns the data to save.
+   */
+  beforeWrite?: (data: Record<string, unknown>, body: any, mode: 'create' | 'update') => Record<string, unknown>;
   // ACL object key for WRITES (create/update/delete), e.g. 'color-mappings'.
   // Reads stay open, per the house convention (see inner-header-resources.ts).
   // Omitted on the HR specs, which predate this and are unchanged by it.
@@ -143,6 +156,15 @@ export function crudListHandlers(spec: CrudSpec) {
       where.AND = [...(Array.isArray(where.AND) ? (where.AND as unknown[]) : []), relationSearch];
     }
 
+    // The resource's own slice of the table, ANDed last so nothing can drop it.
+    // Without this the list ignored baseWhere entirely and returned every row in
+    // the shared table — 504 transactions where 16 gold purchases were wanted —
+    // while the by-id routes were correctly scoped, which made it look like the
+    // filter worked.
+    if (spec.baseWhere) {
+      where.AND = [...(Array.isArray(where.AND) ? (where.AND as unknown[]) : []), spec.baseWhere];
+    }
+
     // Main-tab filter. The tab value arrives as a string; coerce it with the
     // field's own declared kind so a BigInt FK column doesn't get a string.
     const reqTabField = searchParams.get('tabField');
@@ -205,7 +227,11 @@ export function crudListHandlers(spec: CrudSpec) {
     // fault — it comes back as a 409 the form can show (see prisma-errors).
     let created;
     try {
-      created = await delegate(spec).create({ data: buildData(spec, body, 'create'), include: spec.include });
+      const data = buildData(spec, body, 'create');
+      created = await delegate(spec).create({
+        data: spec.beforeWrite ? spec.beforeWrite(data, body, 'create') : data,
+        include: spec.include,
+      });
     } catch (err) {
       const conflict = uniqueConstraintResponse(err);
       if (!conflict) throw err;
@@ -223,12 +249,30 @@ export function crudListHandlers(spec: CrudSpec) {
 }
 
 export function crudItemHandlers(spec: CrudSpec) {
+  /**
+   * Is this row inside the resource's slice?
+   *
+   * Without it, baseWhere would guard the LIST but not the by-id routes, so
+   * /api/gold-purchases/<any transaction id> would happily read, edit or delete
+   * a row that has nothing to do with gold. A filter that only applies to the
+   * listing is not a filter, it is a display preference.
+   */
+  async function inScope(id: bigint): Promise<boolean> {
+    if (!spec.baseWhere) return true;
+    const found = await delegate(spec).findFirst({
+      where: { AND: [{ id }, spec.baseWhere] },
+      select: { id: true },
+    });
+    return !!found;
+  }
+
   async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const session = await auth();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
     if (!/^\d+$/.test(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+    if (!(await inScope(BigInt(id)))) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     const row = await delegate(spec).findUnique({ where: { id: BigInt(id) }, include: spec.include });
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(serialize(row));
@@ -244,12 +288,16 @@ export function crudItemHandlers(spec: CrudSpec) {
     }
 
     const { id } = await params;
+    if (!/^\d+$/.test(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+    if (!(await inScope(BigInt(id)))) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
     const body = await req.json();
     let updated;
     try {
+      const data = buildData(spec, body, 'update');
       updated = await delegate(spec).update({
         where: { id: BigInt(id) },
-        data: buildData(spec, body, 'update'),
+        data: spec.beforeWrite ? spec.beforeWrite(data, body, 'update') : data,
         include: spec.include,
       });
     } catch (err) {
@@ -275,6 +323,8 @@ export function crudItemHandlers(spec: CrudSpec) {
     }
 
     const { id } = await params;
+    if (!/^\d+$/.test(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+    if (!(await inScope(BigInt(id)))) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     await delegate(spec).delete({ where: { id: BigInt(id) } });
     return NextResponse.json({ success: true });
   }
