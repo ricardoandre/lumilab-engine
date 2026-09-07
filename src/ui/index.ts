@@ -5,6 +5,8 @@ export { ResourceForm } from './ResourceForm';
 export { ResourceFormDrawer } from './ResourceFormDrawer';
 export { ResourceShow } from './ResourceShow';
 export { AppHeader } from './AppHeader';
+export { ChangePasswordForm } from './ChangePasswordForm';
+export { UsersManager } from './UsersManager';
 export { AppTitle } from './AppTitle';
 export { AppSider } from './AppSider';
 export { RichTextEditor } from './RichTextEditor';
